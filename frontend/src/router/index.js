@@ -43,6 +43,42 @@ const routes = [
       },
     ],
   },
+  {
+    path: '/settings/users',
+    component: () => import('../layouts/DashboardLayout.vue'),
+    children: [
+      {
+        path: '',
+        name: 'settings.users',
+        component: () => import('../views/UserManagementView.vue'),
+        meta: { permission: 'users.view' },
+      },
+    ],
+  },
+  {
+    path: '/settings/roles',
+    component: () => import('../layouts/DashboardLayout.vue'),
+    children: [
+      {
+        path: '',
+        name: 'settings.roles',
+        component: () => import('../views/RoleManagementView.vue'),
+        meta: { permission: 'roles.view' },
+      },
+    ],
+  },
+  {
+    path: '/settings/permissions',
+    component: () => import('../layouts/DashboardLayout.vue'),
+    children: [
+      {
+        path: '',
+        name: 'settings.permissions',
+        component: () => import('../views/PermissionManagementView.vue'),
+        meta: { permission: 'permissions.view' },
+      },
+    ],
+  },
   { path: '/', redirect: '/dashboard' },
 ]
 
