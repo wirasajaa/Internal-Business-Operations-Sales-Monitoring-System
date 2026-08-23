@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  /* Primary palette, from Figma "ERP Produksi" (login button/icon) */
+  --color-brand-50: #eaf5fc;
+  --color-brand-100: #cfe9f7;
+  --color-brand-500: #188ace;
+  --color-brand-600: #188ace;
+  --color-brand-700: #136f9e;
+
+  /* Sidebar active-link blue, from Figma (distinct shade used only there) */
+  --color-sidebar-active: #2563eb;
+  --color-sidebar-bg: #f2f4f6;
+
+  /* Text + border neutrals, from Figma */
+  --color-ink-900: #191c1e;
+  --color-ink-600: #45464d;
+  --color-ink-500: #515f74;
+  --color-line-200: #e0e3e5;
+  --color-line-300: #c6c6cd;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-ink-900 antialiased font-sans;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
