@@ -11,7 +11,7 @@ class MenuSeeder extends Seeder
 {
     public function run(): void
     {
-        $permissions = collect(['menus.view', 'menus.create', 'menus.update', 'menus.delete'])
+        $permissions = collect(['menus.view', 'menus.create', 'menus.update', 'menus.delete', 'sales.view'])
             ->map(fn ($name) => Permission::firstOrCreate(['name' => $name]));
 
         $adminRole = Role::firstOrCreate(['name' => 'Administrator']);
@@ -25,6 +25,11 @@ class MenuSeeder extends Seeder
         Menu::firstOrCreate(
             ['label' => 'Menu Management'],
             ['path' => '/settings/menus', 'permission_name' => 'menus.view', 'order' => 10]
+        );
+
+        Menu::firstOrCreate(
+            ['label' => 'Sales Order'],
+            ['path' => '/sales/orders', 'permission_name' => 'sales.view', 'order' => 20]
         );
     }
 }

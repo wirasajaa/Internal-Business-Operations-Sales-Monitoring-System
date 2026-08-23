@@ -2,6 +2,35 @@ import { defineStore } from 'pinia'
 import api, { setUnauthorizedHandler } from '../services/api'
 import { fetchNavigation } from '../services/menus'
 
+// sessionStorage (not localStorage): survives a page refresh but clears when the tab/browser closes,
+// matching the rest of this store's in-memory/cookie-based session pattern.
+const NAVIGATION_MENU_STORAGE_KEY = 'auth.navigationMenu'
+
+function readPersistedNavigationMenu() {
+  try {
+    const raw = sessionStorage.getItem(NAVIGATION_MENU_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function persistNavigationMenu(menu) {
+  try {
+    sessionStorage.setItem(NAVIGATION_MENU_STORAGE_KEY, JSON.stringify(menu))
+  } catch {
+    // sessionStorage unavailable (e.g. private mode quota) — cache still works in-memory for this session.
+  }
+}
+
+function clearPersistedNavigationMenu() {
+  try {
+    sessionStorage.removeItem(NAVIGATION_MENU_STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
@@ -9,8 +38,8 @@ export const useAuthStore = defineStore('auth', {
     permissions: [],
     accessToken: null,
     initializing: true,
-    // Cached for the lifetime of this session only (cleared on logout/re-login).
-    navigationMenu: null,
+    // Persisted in sessionStorage so a browser refresh doesn't refetch it; cleared on logout/failed refresh.
+    navigationMenu: readPersistedNavigationMenu(),
   }),
 
   getters: {
@@ -34,6 +63,7 @@ export const useAuthStore = defineStore('auth', {
       this.roles = []
       this.permissions = []
       this.navigationMenu = null
+      clearPersistedNavigationMenu()
     },
 
     async loadNavigationMenu({ force = false } = {}) {
@@ -41,6 +71,7 @@ export const useAuthStore = defineStore('auth', {
         return this.navigationMenu
       }
       this.navigationMenu = await fetchNavigation()
+      persistNavigationMenu(this.navigationMenu)
       return this.navigationMenu
     },
 

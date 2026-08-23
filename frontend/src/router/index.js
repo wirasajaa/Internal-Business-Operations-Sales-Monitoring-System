@@ -31,6 +31,18 @@ const routes = [
       },
     ],
   },
+  {
+    path: '/sales/orders',
+    component: () => import('../layouts/DashboardLayout.vue'),
+    children: [
+      {
+        path: '',
+        name: 'sales.orders',
+        component: () => import('../views/SalesOrderView.vue'),
+        meta: { permission: 'sales.view' },
+      },
+    ],
+  },
   { path: '/', redirect: '/dashboard' },
 ]
 
@@ -51,6 +63,10 @@ router.beforeEach(async (to) => {
   }
 
   if (to.name === 'login' && auth.isAuthenticated) {
+    return { name: 'dashboard.home' }
+  }
+
+  if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
     return { name: 'dashboard.home' }
   }
 

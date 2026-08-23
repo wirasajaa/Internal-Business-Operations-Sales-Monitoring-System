@@ -1,11 +1,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { fetchMenus, fetchAvailablePermissions, createMenu, updateMenu, deleteMenu } from '../services/menus'
+import { useAuthStore } from '../stores/auth'
 import BaseCard from '../components/base/BaseCard.vue'
 import BaseButton from '../components/base/BaseButton.vue'
 import BaseAlert from '../components/base/BaseAlert.vue'
 import MenuTreeItem from '../components/menu/MenuTreeItem.vue'
 import MenuForm from '../components/menu/MenuForm.vue'
+
+const auth = useAuthStore()
 
 const menus = ref([])
 const permissions = ref([])
@@ -74,6 +77,7 @@ async function handleSubmit(payload) {
     }
     closeForm()
     await loadData()
+    await auth.loadNavigationMenu({ force: true })
   } catch (error) {
     const errors = error.response?.data?.errors
     formError.value = errors ? Object.values(errors).flat().join(' ') : 'Gagal menyimpan menu.'
@@ -87,6 +91,7 @@ async function handleDelete(menu) {
   try {
     await deleteMenu(menu.id)
     await loadData()
+    await auth.loadNavigationMenu({ force: true })
   } catch (error) {
     loadError.value = error.response?.data?.message || 'Gagal menghapus menu.'
   }
