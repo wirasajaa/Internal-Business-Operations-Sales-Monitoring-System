@@ -5,23 +5,23 @@ import { useAuthStore } from '../stores/auth'
 import BaseInput from '../components/base/BaseInput.vue'
 import BaseButton from '../components/base/BaseButton.vue'
 import BaseAlert from '../components/base/BaseAlert.vue'
-import mailIcon from '../assets/icons/mail.svg'
+import userIcon from '../assets/icons/mail.svg'
 import lockIcon from '../assets/icons/lock.svg'
 import eyeIcon from '../assets/icons/eye.svg'
 
 const auth = useAuthStore()
 const router = useRouter()
 
-const form = reactive({ email: '', password: '' })
-const fieldErrors = reactive({ email: '', password: '' })
+const form = reactive({ username: '', password: '' })
+const fieldErrors = reactive({ username: '', password: '' })
 const apiError = ref('')
 const loading = ref(false)
 const showPassword = ref(false)
 
 function validate() {
-  fieldErrors.email = form.email ? '' : 'Email wajib diisi.'
+  fieldErrors.username = form.username ? '' : 'Username wajib diisi.'
   fieldErrors.password = form.password ? '' : 'Password wajib diisi.'
-  return !fieldErrors.email && !fieldErrors.password
+  return !fieldErrors.username && !fieldErrors.password
 }
 
 async function handleSubmit() {
@@ -30,14 +30,15 @@ async function handleSubmit() {
 
   loading.value = true
   try {
-    await auth.login(form.email, form.password)
+    await auth.login(form.username, form.password)
     router.push({ name: 'dashboard.home' })
   } catch (error) {
     const status = error.response?.status
-    apiError.value =
-      status === 403
-        ? 'Akun tidak aktif. Hubungi administrator.'
-        : 'Email atau password salah.'
+    if (status === 403) {
+      apiError.value = 'Akun tidak aktif. Hubungi administrator.'
+    } else {
+      apiError.value = error.response?.data?.message ?? 'Username atau password salah.'
+    }
   } finally {
     loading.value = false
   }
@@ -62,13 +63,13 @@ async function handleSubmit() {
             <BaseAlert v-if="apiError" variant="error">{{ apiError }}</BaseAlert>
 
             <BaseInput
-              v-model="form.email"
-              label="Email Address"
-              type="email"
+              v-model="form.username"
+              label="Username"
+              type="text"
               autocomplete="username"
-              :error="fieldErrors.email"
+              :error="fieldErrors.username"
             >
-              <template #icon><img :src="mailIcon" alt="" class="h-4 w-5" /></template>
+              <template #icon><img :src="userIcon" alt="" class="h-4 w-5" /></template>
             </BaseInput>
 
             <BaseInput

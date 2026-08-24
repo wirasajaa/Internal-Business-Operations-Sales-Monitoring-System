@@ -14,7 +14,7 @@ class UserManagementTest extends TestCase
 
     private function makeUserWithPermissions(array $permissionNames, ?string $roleName = null): User
     {
-        $user = User::factory()->create(['password' => 'password', 'is_active' => true]);
+        $user = User::factory()->create(['is_active' => true]);
 
         foreach ($permissionNames as $name) {
             $user->givePermissionTo(Permission::firstOrCreate(['name' => $name]));
@@ -52,23 +52,14 @@ class UserManagementTest extends TestCase
             ->assertStatus(403);
     }
 
-    public function test_can_create_a_user_with_a_role(): void
+    public function test_manual_user_creation_is_disabled_in_favour_of_bpms_auto_provisioning(): void
     {
         $admin = $this->makeUserWithPermissions(['users.create']);
         $role = Role::create(['name' => 'Viewer']);
 
         $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($admin))
-            ->postJson('/api/users', [
-                'name' => 'Budi',
-                'email' => 'budi@example.com',
-                'password' => 'password123',
-                'role_id' => $role->id,
-            ])
-            ->assertStatus(201)
-            ->assertJsonPath('data.name', 'Budi')
-            ->assertJsonPath('data.roles.0.name', 'Viewer');
-
-        $this->assertDatabaseHas('users', ['email' => 'budi@example.com']);
+            ->postJson('/api/users', ['name' => 'Budi', 'role_id' => $role->id])
+            ->assertStatus(409);
     }
 
     public function test_creating_a_user_requires_permission(): void
@@ -77,12 +68,7 @@ class UserManagementTest extends TestCase
         $role = Role::create(['name' => 'Viewer']);
 
         $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($admin))
-            ->postJson('/api/users', [
-                'name' => 'Budi',
-                'email' => 'budi@example.com',
-                'password' => 'password123',
-                'role_id' => $role->id,
-            ])
+            ->postJson('/api/users', ['name' => 'Budi', 'role_id' => $role->id])
             ->assertStatus(403);
     }
 
@@ -97,7 +83,6 @@ class UserManagementTest extends TestCase
         $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($admin))
             ->putJson("/api/users/{$target->id}", [
                 'name' => $target->name,
-                'email' => $target->email,
                 'role_id' => $roleB->id,
             ])
             ->assertStatus(200)
@@ -139,7 +124,6 @@ class UserManagementTest extends TestCase
         $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($admin))
             ->putJson("/api/users/{$admin->id}", [
                 'name' => $admin->name,
-                'email' => $admin->email,
                 'role_id' => $otherRole->id,
             ])
             ->assertStatus(422);
@@ -156,7 +140,6 @@ class UserManagementTest extends TestCase
         $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($admin))
             ->putJson("/api/users/{$admin->id}", [
                 'name' => $admin->name,
-                'email' => $admin->email,
                 'role_id' => $otherRole->id,
             ])
             ->assertStatus(200);

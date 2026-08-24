@@ -16,13 +16,21 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     /**
+     * Identity is sourced from bpms.users.id (a string, not an auto-increment integer).
+     */
+    protected $keyType = 'string';
+
+    public $incrementing = false;
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
      */
     protected $fillable = [
+        'id',
         'name',
-        'email',
+        'username',
         'password',
         'is_active',
     ];

@@ -20,19 +20,11 @@ class UserController extends Controller
 
     public function store(StoreUserRequest $request)
     {
-        $data = $request->validated();
-
-        $user = User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => $data['password'],
-            'is_active' => true,
-        ]);
-
-        $role = Role::findOrFail($data['role_id']);
-        $user->syncRoles([$role]);
-
-        return response()->json(['data' => $user->load('roles')], 201);
+        // Users are no longer created manually — identity comes from bpms.users and a
+        // local record is auto-provisioned on that user's first successful login.
+        return response()->json([
+            'message' => 'Pembuatan user manual tidak lagi didukung. User otomatis terdaftar saat pertama kali login (sumber identitas: bpms.users) — assign role dari halaman ini setelah user tersebut login.',
+        ], 409);
     }
 
     public function update(UpdateUserRequest $request, User $user)
@@ -52,12 +44,6 @@ class UserController extends Controller
         }
 
         $user->name = $data['name'];
-        $user->email = $data['email'];
-
-        if (! empty($data['password'])) {
-            $user->password = $data['password'];
-        }
-
         $user->save();
         $user->syncRoles([$role]);
 

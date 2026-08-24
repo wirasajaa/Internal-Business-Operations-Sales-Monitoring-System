@@ -3,7 +3,6 @@
 namespace App\Http\Requests\User;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class UpdateUserRequest extends FormRequest
 {
@@ -14,10 +13,10 @@ class UpdateUserRequest extends FormRequest
 
     public function rules(): array
     {
+        // Identity (id/username) and credentials are sourced from bpms.users and never
+        // editable here — only the local display name and role assignment can change.
         return [
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->route('user'))],
-            'password' => ['nullable', 'string', 'min:8'],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
         ];
     }

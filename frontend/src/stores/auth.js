@@ -75,8 +75,8 @@ export const useAuthStore = defineStore('auth', {
       return this.navigationMenu
     },
 
-    async login(email, password) {
-      const { data } = await api.post('/auth/login', { email, password })
+    async login(username, password) {
+      const { data } = await api.post('/auth/login', { username, password })
       this.setSession(data)
     },
 
