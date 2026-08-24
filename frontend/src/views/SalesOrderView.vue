@@ -1,40 +1,42 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import BaseButton from '../components/base/BaseButton.vue'
+import BaseAlert from '../components/base/BaseAlert.vue'
+import { fetchSalesOrders } from '../services/salesOrders'
 
 /*
- * Static mock data ported from dev-doc/sales-order-mockup.html.
- * No DB/API call — per founder decision, this slice is presentational only.
+ * The "Sales" column is wired to real data from sales.get_sales_order_for_update_status.
+ * Department status columns (finance..leader) are left unset — the source function
+ * hardcodes them to null at the SQL level; populating them is a separate future slice.
  */
-const orders = ref([
-  {
-    id: 1,
-    code: 'SO-00001',
-    customer: 'Tia Syam',
-    jenisOrder: 'Stock',
-    tglSo: '01 Mei 2026',
-    tglAd: '11 Mei 2026',
-    status: reactive({ finance: 'Approved', ppic: 'Approved', design: '', purchasing: '', warehouse: '', leader: '' }),
-  },
-  {
-    id: 2,
-    code: 'SO-00002',
-    customer: 'Tia Syam',
-    jenisOrder: 'Stock',
-    tglSo: '01 Mei 2026',
-    tglAd: '11 Mei 2026',
+const orders = ref([])
+const loading = ref(true)
+const loadError = ref('')
+
+function mapOrder(row) {
+  return {
+    id: row.id,
+    code: row.id,
+    createdBy: row.created_by,
+    jenisOrder: row.jenis_order,
+    tglSo: row.tgl_so ? formatDate(new Date(row.tgl_so)) : '-',
+    tglAd: row.tgl_ad ? formatDate(new Date(row.tgl_ad)) : '-',
     status: reactive({ finance: '', ppic: '', design: '', purchasing: '', warehouse: '', leader: '' }),
-  },
-  {
-    id: 3,
-    code: 'SO-00003',
-    customer: 'Andi Wijaya',
-    jenisOrder: 'Project',
-    tglSo: '08 Mei 2026',
-    tglAd: '18 Mei 2026',
-    status: reactive({ finance: 'Pending', ppic: '', design: '', purchasing: '', warehouse: '', leader: '' }),
-  },
-])
+  }
+}
+
+async function loadOrders() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const data = await fetchSalesOrders()
+    orders.value = data.map(mapOrder)
+  } catch (error) {
+    loadError.value = error.response?.data?.message || 'Gagal memuat data sales order.'
+  } finally {
+    loading.value = false
+  }
+}
 
 const departments = [
   { key: 'finance', label: 'Finance', width: 'w-40' },
@@ -80,7 +82,7 @@ const filteredOrders = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase()
   if (!keyword) return orders.value
   return orders.value.filter((order) =>
-    `${order.code} ${order.customer} ${order.jenisOrder} ${order.tglSo} ${order.tglAd}`
+    `${order.code} ${order.createdBy ?? ''} ${order.jenisOrder ?? ''} ${order.tglSo} ${order.tglAd}`
       .toLowerCase()
       .includes(keyword),
   )
@@ -221,7 +223,10 @@ function handleDocumentClick(event) {
   }
 }
 
-onMounted(() => document.addEventListener('click', handleDocumentClick))
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+  loadOrders()
+})
 onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
 </script>
 
@@ -365,6 +370,8 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
       </div>
     </section>
 
+    <BaseAlert v-if="loadError" variant="error">{{ loadError }}</BaseAlert>
+
     <!-- Table Section -->
     <section class="overflow-hidden rounded-lg border border-line-200 bg-white shadow-sm">
       <div class="flex flex-col gap-3 border-b border-line-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
@@ -402,7 +409,9 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
         </div>
       </div>
 
-      <div class="px-3 pb-3 sm:px-5 sm:pb-5">
+      <p v-if="loading" class="px-5 pb-5 text-sm text-ink-500">Memuat...</p>
+
+      <div v-else class="px-3 pb-3 sm:px-5 sm:pb-5">
         <div class="sales-table-scroll overflow-x-auto rounded-xl border border-line-200">
           <table class="w-full min-w-[1180px] border-collapse text-sm">
             <thead>
@@ -425,8 +434,8 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
                 <td class="border-r border-line-200 px-4 py-5 text-center font-medium text-ink-500">{{ index + 1 }}</td>
                 <td class="border-r border-line-200 px-4 py-4">
                   <div class="font-semibold text-ink-900">{{ order.code }}</div>
-                  <div class="mt-1 text-ink-600">{{ order.customer }}</div>
-                  <div class="mt-1 text-xs text-ink-500">Jenis Order : <span class="font-medium text-ink-600">{{ order.jenisOrder }}</span></div>
+                  <div class="mt-1 text-ink-600">Dibuat oleh: {{ order.createdBy }}</div>
+                  <div class="mt-1 text-xs text-ink-500">Jenis Order : <span class="font-medium text-ink-600">{{ order.jenisOrder || '-' }}</span></div>
                   <div class="mt-1 text-xs text-ink-500">Tgl SO : <span class="font-medium text-ink-600">{{ order.tglSo }}</span></div>
                   <div class="mt-1 text-xs text-ink-500">Tgl AD : <span class="font-medium text-ink-600">{{ order.tglAd }}</span></div>
                 </td>
