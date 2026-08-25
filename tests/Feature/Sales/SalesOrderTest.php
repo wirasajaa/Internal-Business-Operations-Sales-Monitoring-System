@@ -66,6 +66,86 @@ class SalesOrderTest extends TestCase
             ->assertJsonPath('message', 'Terjadi kesalahan pada sumber data.');
     }
 
+    /*
+     * sales.get_sales_order_for_update_status never actually applies its own filter
+     * arguments (confirmed live, 2026-08-25 — see plan/sales-order-filter-wiring-
+     * 2026-08-25.md), so it always returns the full unfiltered set regardless of what
+     * we send. These tests mock that full unfiltered shape and assert the controller's
+     * own PHP-side find/date-range filtering (the actual new logic this slice adds).
+     */
+    private function mockUnfilteredThreeOrders(): void
+    {
+        $payload = json_encode([
+            'body' => [
+                ['id' => 'SO001', 'transaction_number' => 'TRX-001', 'customer_name' => 'PT Pelanggan A', 'tgl_so' => '2026-08-01', 'tgl_ad' => '2026-08-15'],
+                ['id' => 'SO002', 'transaction_number' => 'TRX-002', 'customer_name' => 'PT Pelanggan B', 'tgl_so' => '2026-08-10', 'tgl_ad' => '2026-08-20'],
+                ['id' => 'SO003', 'transaction_number' => 'TRX-003', 'customer_name' => 'CV Lainnya', 'tgl_so' => '2026-09-01', 'tgl_ad' => '2026-09-15'],
+            ],
+            'respon' => ['is_success' => true, 'msg' => ''],
+        ]);
+        DB::shouldReceive('select')->once()->andReturn([(object) ['payload' => $payload]]);
+    }
+
+    public function test_filters_by_find_against_transaction_number_and_customer_name(): void
+    {
+        $user = $this->makeUserWithPermissions(['sales.view']);
+        $this->mockUnfilteredThreeOrders();
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/orders?find=Pelanggan+A')
+            ->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', 'SO001');
+    }
+
+    public function test_filters_by_tgl_so_range(): void
+    {
+        $user = $this->makeUserWithPermissions(['sales.view']);
+        $this->mockUnfilteredThreeOrders();
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/orders?is_date_so=1&start_so=2026-08-01&end_so=2026-08-10')
+            ->assertStatus(200)
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', 'SO001')
+            ->assertJsonPath('data.1.id', 'SO002');
+    }
+
+    public function test_filters_by_tgl_ad_range(): void
+    {
+        $user = $this->makeUserWithPermissions(['sales.view']);
+        $this->mockUnfilteredThreeOrders();
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/orders?is_date_ad=1&start_ad=2026-09-01&end_ad=2026-09-30')
+            ->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', 'SO003');
+    }
+
+    public function test_combines_find_and_date_range_filters_with_and_logic(): void
+    {
+        $user = $this->makeUserWithPermissions(['sales.view']);
+        $this->mockUnfilteredThreeOrders();
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/orders?find=Pelanggan&is_date_so=1&start_so=2026-08-05&end_so=2026-08-31')
+            ->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', 'SO002');
+    }
+
+    public function test_filters_matching_nothing_returns_empty_array_not_error(): void
+    {
+        $user = $this->makeUserWithPermissions(['sales.view']);
+        $this->mockUnfilteredThreeOrders();
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/orders?find=TidakAda')
+            ->assertStatus(200)
+            ->assertJsonCount(0, 'data');
+    }
+
     public function test_listing_sales_orders_requires_permission(): void
     {
         $user = $this->makeUserWithPermissions([]);

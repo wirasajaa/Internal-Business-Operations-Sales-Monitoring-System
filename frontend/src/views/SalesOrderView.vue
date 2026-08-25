@@ -25,11 +25,11 @@ function mapOrder(row) {
   }
 }
 
-async function loadOrders() {
+async function loadOrders(filters = {}) {
   loading.value = true
   loadError.value = ''
   try {
-    const data = await fetchSalesOrders()
+    const data = await fetchSalesOrders(filters)
     orders.value = data.map(mapOrder)
   } catch (error) {
     loadError.value = error.response?.data?.message || 'Gagal memuat data sales order.'
@@ -76,12 +76,35 @@ async function loadStatusOptions() {
   }
 }
 
-/* Filter card state — decorative only (matches the source mockup: only search actually filters). */
+/*
+ * Filter card state. Jenis Order + department dropdowns stay decorative — the source
+ * SQL function hardcodes their output to null (no real value exists anywhere to filter
+ * on), confirmed live. `find` (search box) + Tgl SO/AD range are real, server-enforced
+ * filters (see SalesOrderController@index) — the function itself ignores its own filter
+ * arguments, so this is applied in PHP, not by the function.
+ */
 const jenisOrderFilter = ref('')
 const departmentFilters = reactive({ finance: '', ppic: '', design: '', purchasing: '', warehouse: '', leader: '' })
 const filterApplied = ref(false)
 
-function applyFilter() {
+function toIsoDate(date) {
+  if (!date) return ''
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+async function applyFilter() {
+  await loadOrders({
+    find: searchQuery.value.trim(),
+    is_date_so: !!(soRange.state.start && soRange.state.end),
+    start_so: toIsoDate(soRange.state.start),
+    end_so: toIsoDate(soRange.state.end),
+    is_date_ad: !!(adRange.state.start && adRange.state.end),
+    start_ad: toIsoDate(adRange.state.start),
+    end_ad: toIsoDate(adRange.state.end),
+  })
   filterApplied.value = true
   setTimeout(() => {
     filterApplied.value = false
@@ -104,9 +127,9 @@ const limitOptions = ['10', '25', '50', '100']
 const limitSelect = ref('10')
 
 /*
- * Reset clears the filter card, the date pickers, the search box, AND every row's
- * department status back to blank — matching the mockup, whose reset handler
- * selects every <select> on the page (filters and per-row status cells alike).
+ * Reset clears the filter card, the date pickers, and the search box, then refetches
+ * the unfiltered list — every row's department status comes back blank naturally since
+ * mapOrder() always initializes a fresh blank status object per row.
  */
 function resetAll() {
   jenisOrderFilter.value = ''
@@ -114,9 +137,7 @@ function resetAll() {
   searchQuery.value = ''
   soRange.reset()
   adRange.reset()
-  for (const order of orders.value) {
-    for (const key of Object.keys(order.status)) order.status[key] = ''
-  }
+  loadOrders()
 }
 
 /* Minimal date-range picker, ported from the mockup's vanilla-JS calendar. */
