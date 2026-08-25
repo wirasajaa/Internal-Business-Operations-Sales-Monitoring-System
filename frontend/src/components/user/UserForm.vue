@@ -1,9 +1,12 @@
 <script setup>
-import { computed, reactive, watch } from 'vue'
+import { reactive, watch } from 'vue'
 import BaseInput from '../base/BaseInput.vue'
 import BaseButton from '../base/BaseButton.vue'
 import BaseAlert from '../base/BaseAlert.vue'
 
+// Edit-only: identity/credentials come from bpms.users (see
+// dev-doc/user-role-permission-management/requirement-conflicts/create-user-disabled-2026-08-24.md).
+// Only the local display name and role assignment can be changed here.
 const props = defineProps({
   initialValue: { type: Object, default: null },
   roleOptions: { type: Array, default: () => [] },
@@ -13,16 +16,12 @@ const props = defineProps({
 
 const emit = defineEmits(['submit', 'cancel'])
 
-const isEditing = computed(() => !!props.initialValue)
-
-const form = reactive({ name: '', email: '', password: '', role_id: '' })
+const form = reactive({ name: '', role_id: '' })
 
 watch(
   () => props.initialValue,
   (value) => {
     form.name = value?.name ?? ''
-    form.email = value?.email ?? ''
-    form.password = ''
     form.role_id = value?.roles?.[0]?.id ?? ''
   },
   { immediate: true },
@@ -31,8 +30,6 @@ watch(
 function handleSubmit() {
   emit('submit', {
     name: form.name,
-    email: form.email,
-    password: form.password,
     role_id: form.role_id,
   })
 }
@@ -43,12 +40,6 @@ function handleSubmit() {
     <BaseAlert v-if="errorMessage" variant="error">{{ errorMessage }}</BaseAlert>
 
     <BaseInput v-model="form.name" label="Nama" />
-    <BaseInput v-model="form.email" label="Email" type="email" />
-    <BaseInput
-      v-model="form.password"
-      :label="isEditing ? 'Password (kosongkan bila tidak diubah)' : 'Password'"
-      type="password"
-    />
 
     <div>
       <label class="mb-1 block text-sm font-medium text-slate-700">Role</label>

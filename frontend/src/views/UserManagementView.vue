@@ -1,12 +1,14 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { fetchUsers, createUser, updateUser, activateUser, deactivateUser } from '../services/users'
+import { fetchUsers, updateUser, activateUser, deactivateUser } from '../services/users'
 import { fetchRoles } from '../services/roles'
 import BaseCard from '../components/base/BaseCard.vue'
-import BaseButton from '../components/base/BaseButton.vue'
 import BaseAlert from '../components/base/BaseAlert.vue'
 import UserForm from '../components/user/UserForm.vue'
 
+// User creation is no longer available here — identity comes from bpms.users, a
+// local record is auto-provisioned on that user's first successful login. See
+// dev-doc/user-role-permission-management/requirement-conflicts/create-user-disabled-2026-08-24.md.
 const users = ref([])
 const roles = ref([])
 const loading = ref(true)
@@ -33,12 +35,6 @@ async function loadData() {
 
 onMounted(loadData)
 
-function openCreateForm() {
-  editingUser.value = null
-  formError.value = ''
-  showForm.value = true
-}
-
 function openEditForm(user) {
   editingUser.value = user
   formError.value = ''
@@ -54,11 +50,7 @@ async function handleSubmit(payload) {
   formLoading.value = true
   formError.value = ''
   try {
-    if (editingUser.value) {
-      await updateUser(editingUser.value.id, payload)
-    } else {
-      await createUser(payload)
-    }
+    await updateUser(editingUser.value.id, payload)
     closeForm()
     await loadData()
   } catch (error) {
@@ -90,14 +82,16 @@ async function handleToggleActive(user) {
   <div class="flex flex-col gap-4">
     <div class="flex items-center justify-between">
       <h1 class="text-lg font-semibold text-slate-900">User Management</h1>
-      <BaseButton @click="openCreateForm">Tambah User</BaseButton>
     </div>
+    <p class="text-xs text-slate-500">
+      User baru otomatis terdaftar saat pertama kali login. Assign role di sini setelah user tersebut login.
+    </p>
 
     <BaseAlert v-if="loadError" variant="error">{{ loadError }}</BaseAlert>
     <BaseAlert v-if="actionError" variant="error">{{ actionError }}</BaseAlert>
 
     <BaseCard v-if="showForm">
-      <h2 class="mb-4 text-base font-semibold text-slate-900">{{ editingUser ? 'Edit User' : 'Tambah User' }}</h2>
+      <h2 class="mb-4 text-base font-semibold text-slate-900">Edit User</h2>
       <UserForm
         :initial-value="editingUser"
         :role-options="roles"
@@ -116,7 +110,7 @@ async function handleToggleActive(user) {
           <thead>
             <tr class="border-b border-line-200 text-xs font-semibold text-slate-500">
               <th class="py-2 pr-4">Nama</th>
-              <th class="py-2 pr-4">Email</th>
+              <th class="py-2 pr-4">Username</th>
               <th class="py-2 pr-4">Role</th>
               <th class="py-2 pr-4">Status</th>
               <th class="py-2 pr-4">Aksi</th>
@@ -125,7 +119,7 @@ async function handleToggleActive(user) {
           <tbody class="divide-y divide-line-200">
             <tr v-for="user in users" :key="user.id">
               <td class="py-2 pr-4 font-medium text-slate-900">{{ user.name }}</td>
-              <td class="py-2 pr-4 text-slate-600">{{ user.email }}</td>
+              <td class="py-2 pr-4 text-slate-600">{{ user.username }}</td>
               <td class="py-2 pr-4 text-slate-600">{{ user.roles?.[0]?.name ?? '—' }}</td>
               <td class="py-2 pr-4">
                 <span

@@ -27,4 +27,30 @@ class SalesOrderController extends Controller
 
         return response()->json(['data' => $payload['body'] ?? []]);
     }
+
+    /**
+     * Department status options, grouped by `type` (finance/ppic/design/purchasing/
+     * warehouse/leader_produksi). The source function's own `type` filter parameter is
+     * broken (extracts JSON via `->` instead of `->>`, so it never matches any row) —
+     * worked around by fetching everything unfiltered and grouping here instead.
+     */
+    public function statuses()
+    {
+        $rows = DB::select('SELECT sales.get_master_sales_order_status(null) AS payload');
+        $payload = json_decode($rows[0]->payload ?? 'null', true);
+
+        $isSuccess = $payload['respon']['is_success'] ?? false;
+
+        if (! $isSuccess) {
+            return response()->json([
+                'message' => $payload['respon']['msg'] ?? 'Gagal mengambil data status sales order.',
+            ], 422);
+        }
+
+        $grouped = collect($payload['body'] ?? [])->groupBy('type')->map(function ($items) {
+            return $items->values();
+        });
+
+        return response()->json(['data' => $grouped]);
+    }
 }

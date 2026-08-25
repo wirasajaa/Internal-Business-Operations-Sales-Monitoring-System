@@ -51,4 +51,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:permissions.delete')->delete('permissions/{permission}', [PermissionController::class, 'destroy']);
 
     Route::middleware('permission:sales.view')->get('sales/orders', [SalesOrderController::class, 'index']);
+    Route::middleware('permission:sales.view')->get('sales/order-statuses', [SalesOrderController::class, 'statuses']);
 });

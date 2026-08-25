@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import BaseButton from '../components/base/BaseButton.vue'
 import BaseAlert from '../components/base/BaseAlert.vue'
-import { fetchSalesOrders } from '../services/salesOrders'
+import { fetchSalesOrders, fetchOrderStatuses } from '../services/salesOrders'
 
 /*
  * The "Sales" column is wired to real data from sales.get_sales_order_for_update_status.
@@ -47,25 +47,37 @@ const departments = [
   { key: 'leader', label: 'Leader Produksi', width: 'w-48' },
 ]
 
-const statusSelectOptions = ['Pending', 'Approved', 'Rejected', 'Completed']
+/* UI uses the short key "leader"; the real master data's type column is "leader_produksi". */
+const departmentTypeMap = {
+  finance: 'finance',
+  ppic: 'ppic',
+  design: 'design',
+  purchasing: 'purchasing',
+  warehouse: 'warehouse',
+  leader: 'leader_produksi',
+}
 
-function statusColorClass(value) {
-  if (value === 'Approved' || value === 'Completed') return 'bg-emerald-50 text-emerald-700'
-  if (value === 'Pending') return 'bg-amber-50 text-amber-700'
-  if (value === 'Rejected') return 'bg-rose-50 text-rose-700'
-  return 'bg-slate-100 text-ink-600'
+/*
+ * Department status options, sourced from sales.master_sales_order_status via
+ * sales.get_master_sales_order_status (grouped server-side by type — the function's own
+ * `type` filter parameter doesn't work, see SalesOrderController@statuses). Each dept's
+ * list is an array of {id, name, sort_order}; the select's value is the status name.
+ */
+const statusOptions = reactive({ finance: [], ppic: [], design: [], purchasing: [], warehouse: [], leader: [] })
+
+async function loadStatusOptions() {
+  try {
+    const grouped = await fetchOrderStatuses()
+    for (const [uiKey, dbType] of Object.entries(departmentTypeMap)) {
+      statusOptions[uiKey] = grouped[dbType] ?? []
+    }
+  } catch {
+    // Non-fatal: dropdowns simply stay empty if the master status source is unavailable.
+  }
 }
 
 /* Filter card state — decorative only (matches the source mockup: only search actually filters). */
 const jenisOrderFilter = ref('')
-const departmentFilterOptions = {
-  finance: ['Pending', 'Approved', 'Rejected'],
-  ppic: ['Pending', 'Approved', 'Rejected'],
-  design: ['Pending', 'Approved', 'Rejected'],
-  purchasing: ['Pending', 'Approved', 'Rejected'],
-  warehouse: ['Pending', 'Ready', 'Completed'],
-  leader: ['Pending', 'Approved', 'Completed'],
-}
 const departmentFilters = reactive({ finance: '', ppic: '', design: '', purchasing: '', warehouse: '', leader: '' })
 const filterApplied = ref(false)
 
@@ -226,6 +238,7 @@ function handleDocumentClick(event) {
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
   loadOrders()
+  loadStatusOptions()
 })
 onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
 </script>
@@ -350,7 +363,7 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
                 class="w-full rounded-lg border border-line-300 bg-white px-3 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
               >
                 <option value="">Semua</option>
-                <option v-for="opt in departmentFilterOptions[dept.key]" :key="opt">{{ opt }}</option>
+                <option v-for="opt in statusOptions[dept.key]" :key="opt.id" :value="opt.name">{{ opt.name }}</option>
               </select>
             </div>
           </div>
@@ -442,11 +455,10 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
                 <td v-for="dept in departments" :key="dept.key" class="border-r border-line-200 px-3 py-5 last:border-r-0">
                   <select
                     v-model="order.status[dept.key]"
-                    class="w-full rounded-lg border border-line-200 px-3 py-2 text-xs font-medium outline-none transition-colors focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-                    :class="statusColorClass(order.status[dept.key])"
+                    class="w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-xs font-medium text-ink-600 outline-none transition-colors focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
                   >
                     <option value="">Pilih status</option>
-                    <option v-for="opt in statusSelectOptions" :key="opt" :value="opt">{{ opt }}</option>
+                    <option v-for="opt in statusOptions[dept.key]" :key="opt.id" :value="opt.name">{{ opt.name }}</option>
                   </select>
                 </td>
               </tr>

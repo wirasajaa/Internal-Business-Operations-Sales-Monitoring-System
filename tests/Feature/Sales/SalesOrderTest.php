@@ -74,4 +74,54 @@ class SalesOrderTest extends TestCase
             ->getJson('/api/sales/orders')
             ->assertStatus(403);
     }
+
+    /*
+     * sales.get_master_sales_order_status's own `type` parameter is broken upstream (see
+     * SalesOrderController@statuses) — the controller always calls it unfiltered and groups
+     * by `type` itself, so these tests mock the unfiltered shape and assert the grouping.
+     */
+    public function test_order_statuses_are_grouped_by_type(): void
+    {
+        $user = $this->makeUserWithPermissions(['sales.view']);
+        $payload = json_encode([
+            'body' => [
+                ['id' => 'S1', 'type' => 'finance', 'name' => 'DP 10 %', 'sort_order' => 1],
+                ['id' => 'S2', 'type' => 'finance', 'name' => 'Lunas', 'sort_order' => 2],
+                ['id' => 'S3', 'type' => 'ppic', 'name' => 'Done', 'sort_order' => 1],
+            ],
+            'respon' => ['is_success' => true, 'msg' => ''],
+        ]);
+        DB::shouldReceive('select')->once()->andReturn([(object) ['payload' => $payload]]);
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/order-statuses')
+            ->assertStatus(200)
+            ->assertJsonPath('data.finance.0.name', 'DP 10 %')
+            ->assertJsonPath('data.finance.1.name', 'Lunas')
+            ->assertJsonPath('data.ppic.0.name', 'Done');
+    }
+
+    public function test_order_statuses_surfaces_source_error_message_when_not_success(): void
+    {
+        $user = $this->makeUserWithPermissions(['sales.view']);
+        $payload = json_encode([
+            'body' => null,
+            'respon' => ['is_success' => false, 'msg' => 'Terjadi kesalahan pada sumber data.'],
+        ]);
+        DB::shouldReceive('select')->once()->andReturn([(object) ['payload' => $payload]]);
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/order-statuses')
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Terjadi kesalahan pada sumber data.');
+    }
+
+    public function test_order_statuses_requires_permission(): void
+    {
+        $user = $this->makeUserWithPermissions([]);
+
+        $this->withHeader('Authorization', 'Bearer '.$this->tokenFor($user))
+            ->getJson('/api/sales/order-statuses')
+            ->assertStatus(403);
+    }
 }
