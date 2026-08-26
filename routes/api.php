@@ -52,4 +52,5 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('permission:sales.view')->get('sales/orders', [SalesOrderController::class, 'index']);
     Route::middleware('permission:sales.view')->get('sales/order-statuses', [SalesOrderController::class, 'statuses']);
+    Route::middleware('permission:sales.view')->patch('sales/orders/{id}/status', [SalesOrderController::class, 'updateStatus']);
 });

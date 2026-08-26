@@ -2,16 +2,20 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import BaseButton from '../components/base/BaseButton.vue'
 import BaseAlert from '../components/base/BaseAlert.vue'
-import { fetchSalesOrders, fetchOrderStatuses } from '../services/salesOrders'
+import { fetchSalesOrders, fetchOrderStatuses, updateOrderStatus } from '../services/salesOrders'
 
 /*
  * The "Sales" column is wired to real data from sales.get_sales_order_for_update_status.
- * Department status columns (finance..leader) are left unset — the source function
- * hardcodes them to null at the SQL level; populating them is a separate future slice.
+ * Department status columns (finance..leader) are pre-filled from the same response —
+ * SalesOrderController@index already corrects those 6 fields to the real status id
+ * (the source function itself aliases the wrong column; worked around server-side), so
+ * they pre-select correctly here.
  */
 const orders = ref([])
 const loading = ref(true)
 const loadError = ref('')
+const statusUpdateError = ref('')
+const statusUpdateSuccess = ref('')
 
 function mapOrder(row) {
   return {
@@ -21,7 +25,42 @@ function mapOrder(row) {
     jenisOrder: row.jenis_order,
     tglSo: row.tgl_so ? formatDate(new Date(row.tgl_so)) : '-',
     tglAd: row.tgl_ad ? formatDate(new Date(row.tgl_ad)) : '-',
-    status: reactive({ finance: '', ppic: '', design: '', purchasing: '', warehouse: '', leader: '' }),
+    status: reactive({
+      finance: row.finance ?? '',
+      ppic: row.ppic ?? '',
+      design: row.design ?? '',
+      purchasing: row.purchasing ?? '',
+      warehouse: row.warehouse ?? '',
+      leader: row.leader_produksi ?? '',
+    }),
+    saving: reactive({ finance: false, ppic: false, design: false, purchasing: false, warehouse: false, leader: false }),
+  }
+}
+
+/**
+ * Called when a per-row department status select changes. Persists via
+ * sales.set_new_sales_order_for_update_status (fixed by the founder 2026-08-25 — both the
+ * first-time-insert and update-existing-row paths verified live). Optimistically applies
+ * the new value; shows a brief success message on success, reverts + shows an error on
+ * failure. `order.saving[uiKey]` drives the loading spinner on the select while in flight.
+ */
+async function handleStatusChange(order, uiKey, newStatusId) {
+  const previous = order.status[uiKey]
+  order.status[uiKey] = newStatusId
+  order.saving[uiKey] = true
+  statusUpdateError.value = ''
+  statusUpdateSuccess.value = ''
+  try {
+    await updateOrderStatus(order.id, departmentTypeMap[uiKey], newStatusId)
+    statusUpdateSuccess.value = 'Status berhasil diperbarui.'
+    setTimeout(() => {
+      statusUpdateSuccess.value = ''
+    }, 3000)
+  } catch (error) {
+    order.status[uiKey] = previous
+    statusUpdateError.value = error.response?.data?.message || 'Gagal menyimpan status sales order.'
+  } finally {
+    order.saving[uiKey] = false
   }
 }
 
@@ -61,7 +100,9 @@ const departmentTypeMap = {
  * Department status options, sourced from sales.master_sales_order_status via
  * sales.get_master_sales_order_status (grouped server-side by type — the function's own
  * `type` filter parameter doesn't work, see SalesOrderController@statuses). Each dept's
- * list is an array of {id, name, sort_order}; the select's value is the status name.
+ * list is an array of {id, name, sort_order}; every select (filter + per-row) binds its
+ * value to `opt.id`, matching both the filter contract and set_new_sales_order_for_
+ * update_status's expected `status_id`.
  */
 const statusOptions = reactive({ finance: [], ppic: [], design: [], purchasing: [], warehouse: [], leader: [] })
 
@@ -77,14 +118,18 @@ async function loadStatusOptions() {
 }
 
 /*
- * Filter card state. Jenis Order + department dropdowns stay decorative — the source
- * SQL function hardcodes their output to null (no real value exists anywhere to filter
- * on), confirmed live. `find` (search box) + Tgl SO/AD range are real, server-enforced
- * filters (see SalesOrderController@index) — the function itself ignores its own filter
- * arguments, so this is applied in PHP, not by the function.
+ * Filter card state. Jenis Order stays decorative — the source SQL function still
+ * hardcodes its output to null (no real value exists anywhere to filter on), confirmed
+ * live. `find`, Tgl SO/AD range, and the 6 department filters are all real, server-side
+ * filters now (sales.get_sales_order_for_update_status confirmed fixed 2026-08-25) — see
+ * SalesOrderController@index, which just passes these straight through.
+ * Department filter values are 'semua' | 'kosong' | a real sales.master_sales_order_status
+ * id, matching the SQL function's own contract exactly.
  */
 const jenisOrderFilter = ref('')
-const departmentFilters = reactive({ finance: '', ppic: '', design: '', purchasing: '', warehouse: '', leader: '' })
+const departmentFilters = reactive({
+  finance: 'semua', ppic: 'semua', design: 'semua', purchasing: 'semua', warehouse: 'semua', leader: 'semua',
+})
 const filterApplied = ref(false)
 
 function toIsoDate(date) {
@@ -95,16 +140,76 @@ function toIsoDate(date) {
   return `${y}-${m}-${d}`
 }
 
-async function applyFilter() {
-  await loadOrders({
+function currentFilterPayload() {
+  const payload = {
     find: searchQuery.value.trim(),
-    is_date_so: !!(soRange.state.start && soRange.state.end),
+    is_date_so: soRange.state.enabled,
     start_so: toIsoDate(soRange.state.start),
     end_so: toIsoDate(soRange.state.end),
-    is_date_ad: !!(adRange.state.start && adRange.state.end),
+    is_date_ad: adRange.state.enabled,
     start_ad: toIsoDate(adRange.state.start),
     end_ad: toIsoDate(adRange.state.end),
-  })
+  }
+  for (const [uiKey, dbType] of Object.entries(departmentTypeMap)) {
+    payload[dbType] = departmentFilters[uiKey]
+  }
+  return payload
+}
+
+/*
+ * Persists the last-applied filter card state in sessionStorage so it survives a page
+ * refresh (per-tab, cleared when the tab closes — same storage mechanism already used
+ * elsewhere in this app for the navigation menu cache). Only saved when a filter is
+ * actually applied (Terapkan Filter) or reset, not on every keystroke/click.
+ */
+const FILTER_STORAGE_KEY = 'salesOrders.filters'
+
+function saveFilterState() {
+  try {
+    sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({
+      search: searchQuery.value,
+      jenisOrder: jenisOrderFilter.value,
+      departments: { ...departmentFilters },
+      so: { enabled: soRange.state.enabled, start: toIsoDate(soRange.state.start), end: toIsoDate(soRange.state.end) },
+      ad: { enabled: adRange.state.enabled, start: toIsoDate(adRange.state.start), end: toIsoDate(adRange.state.end) },
+    }))
+  } catch {
+    // sessionStorage unavailable (e.g. private browsing) — filters just won't persist.
+  }
+}
+
+function restoreFilterState() {
+  try {
+    const raw = sessionStorage.getItem(FILTER_STORAGE_KEY)
+    if (!raw) return false
+    const saved = JSON.parse(raw)
+
+    searchQuery.value = saved.search ?? ''
+    jenisOrderFilter.value = saved.jenisOrder ?? ''
+    Object.assign(departmentFilters, saved.departments ?? {})
+    soRange.state.enabled = saved.so?.enabled ?? false
+    soRange.state.start = saved.so?.start ? new Date(saved.so.start) : null
+    soRange.state.end = saved.so?.end ? new Date(saved.so.end) : null
+    adRange.state.enabled = saved.ad?.enabled ?? false
+    adRange.state.start = saved.ad?.start ? new Date(saved.ad.start) : null
+    adRange.state.end = saved.ad?.end ? new Date(saved.ad.end) : null
+    return true
+  } catch {
+    return false
+  }
+}
+
+function clearFilterState() {
+  try {
+    sessionStorage.removeItem(FILTER_STORAGE_KEY)
+  } catch {
+    // Non-fatal.
+  }
+}
+
+async function applyFilter() {
+  await loadOrders(currentFilterPayload())
+  saveFilterState()
   filterApplied.value = true
   setTimeout(() => {
     filterApplied.value = false
@@ -127,16 +232,16 @@ const limitOptions = ['10', '25', '50', '100']
 const limitSelect = ref('10')
 
 /*
- * Reset clears the filter card, the date pickers, and the search box, then refetches
- * the unfiltered list — every row's department status comes back blank naturally since
- * mapOrder() always initializes a fresh blank status object per row.
+ * Reset clears the filter card (department filters back to 'semua'), unchecks both date
+ * ranges, and the search box, then refetches the fully unfiltered list.
  */
 function resetAll() {
   jenisOrderFilter.value = ''
-  for (const key of Object.keys(departmentFilters)) departmentFilters[key] = ''
+  for (const key of Object.keys(departmentFilters)) departmentFilters[key] = 'semua'
   searchQuery.value = ''
   soRange.reset()
   adRange.reset()
+  clearFilterState()
   loadOrders()
 }
 
@@ -157,6 +262,7 @@ function formatDate(date) {
 
 function createDateRange() {
   const state = reactive({
+    enabled: false,
     open: false,
     viewYear: 2026,
     viewMonth: 4,
@@ -237,6 +343,7 @@ function createDateRange() {
   }
 
   function reset() {
+    state.enabled = false
     state.start = state.end = state.tempStart = state.tempEnd = null
     state.viewYear = 2026
     state.viewMonth = 4
@@ -249,6 +356,16 @@ function createDateRange() {
 const soRange = createDateRange()
 const adRange = createDateRange()
 
+/* Tgl SO defaults to checked + the last 2 months, applied to the initial fetch too. */
+const soDefaultEnd = new Date()
+const soDefaultStart = new Date()
+soDefaultStart.setMonth(soDefaultStart.getMonth() - 2)
+soRange.state.enabled = true
+soRange.state.start = soDefaultStart
+soRange.state.end = soDefaultEnd
+soRange.state.viewYear = soDefaultEnd.getFullYear()
+soRange.state.viewMonth = soDefaultEnd.getMonth()
+
 function handleDocumentClick(event) {
   if (!event.target.closest('[data-date-range]')) {
     soRange.state.open = false
@@ -258,7 +375,11 @@ function handleDocumentClick(event) {
 
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
-  loadOrders()
+  // A saved filter state (from a prior "Terapkan Filter" this tab session) overrides the
+  // Tgl SO 2-month default set above; otherwise that default stands.
+  restoreFilterState()
+  loadOrders(currentFilterPayload())
+  saveFilterState()
   loadStatusOptions()
 })
 onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
@@ -305,7 +426,10 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
           </div>
 
           <div v-for="range in [{ picker: soRange, label: 'Tgl SO' }, { picker: adRange, label: 'Tgl AD' }]" :key="range.label" data-date-range class="relative">
-            <label class="mb-1.5 block text-xs font-semibold text-ink-600">{{ range.label }}</label>
+            <label class="mb-1.5 flex items-center gap-2 text-xs font-semibold text-ink-600">
+              <input type="checkbox" v-model="range.picker.state.enabled" class="h-3.5 w-3.5 rounded border-line-300 text-brand-600 focus:ring-brand-500" />
+              {{ range.label }}
+            </label>
             <button
               type="button"
               class="flex w-full items-center justify-between rounded-lg border border-line-300 bg-white px-3 py-2.5 text-left text-sm outline-none transition-colors focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
@@ -383,8 +507,9 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
                 v-model="departmentFilters[dept.key]"
                 class="w-full rounded-lg border border-line-300 bg-white px-3 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
               >
-                <option value="">Semua</option>
-                <option v-for="opt in statusOptions[dept.key]" :key="opt.id" :value="opt.name">{{ opt.name }}</option>
+                <option value="semua">Semua</option>
+                <option value="kosong">Kosong</option>
+                <option v-for="opt in statusOptions[dept.key]" :key="opt.id" :value="opt.id">{{ opt.name }}</option>
               </select>
             </div>
           </div>
@@ -405,6 +530,8 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
     </section>
 
     <BaseAlert v-if="loadError" variant="error">{{ loadError }}</BaseAlert>
+    <BaseAlert v-if="statusUpdateError" variant="error">{{ statusUpdateError }}</BaseAlert>
+    <BaseAlert v-if="statusUpdateSuccess" variant="success">{{ statusUpdateSuccess }}</BaseAlert>
 
     <!-- Table Section -->
     <section class="overflow-hidden rounded-lg border border-line-200 bg-white shadow-sm">
@@ -474,13 +601,26 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
                   <div class="mt-1 text-xs text-ink-500">Tgl AD : <span class="font-medium text-ink-600">{{ order.tglAd }}</span></div>
                 </td>
                 <td v-for="dept in departments" :key="dept.key" class="border-r border-line-200 px-3 py-5 last:border-r-0">
-                  <select
-                    v-model="order.status[dept.key]"
-                    class="w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-xs font-medium text-ink-600 outline-none transition-colors focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-                  >
-                    <option value="">Pilih status</option>
-                    <option v-for="opt in statusOptions[dept.key]" :key="opt.id" :value="opt.name">{{ opt.name }}</option>
-                  </select>
+                  <div class="relative">
+                    <select
+                      :value="order.status[dept.key]"
+                      :disabled="order.saving[dept.key]"
+                      class="w-full rounded-lg border border-line-200 bg-white py-2 pl-3 pr-7 text-xs font-medium text-ink-600 outline-none transition-colors focus:border-brand-500 focus:ring-1 focus:ring-brand-500 disabled:opacity-60"
+                      @change="handleStatusChange(order, dept.key, $event.target.value)"
+                    >
+                      <option value="">Pilih status</option>
+                      <option v-for="opt in statusOptions[dept.key]" :key="opt.id" :value="opt.id">{{ opt.name }}</option>
+                    </select>
+                    <svg
+                      v-if="order.saving[dept.key]"
+                      class="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-brand-600"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                  </div>
                 </td>
               </tr>
 
