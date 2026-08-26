@@ -2,9 +2,11 @@
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
+import { useUiStore } from '../../stores/ui'
 import caretDownIcon from '../../assets/icons/caret-down.svg'
 
 const auth = useAuthStore()
+const ui = useUiStore()
 const router = useRouter()
 const sidebarOpen = inject('sidebarOpen', ref(false))
 
@@ -33,8 +35,13 @@ const initials = computed(() => {
 const roleLabel = computed(() => auth.roles?.[0] ?? '')
 
 async function handleLogout() {
-  await auth.logout()
-  router.push({ name: 'login' })
+  ui.isLoggingOut = true
+  try {
+    await auth.logout()
+    await router.push({ name: 'login' })
+  } finally {
+    ui.isLoggingOut = false
+  }
 }
 </script>
 

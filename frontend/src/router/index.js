@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useUiStore } from '../stores/ui'
 
 const routes = [
   {
@@ -88,6 +89,8 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  useUiStore().isRouteLoading = true
+
   const auth = useAuthStore()
 
   if (auth.initializing) {
@@ -107,6 +110,14 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+router.afterEach(() => {
+  useUiStore().isRouteLoading = false
+})
+
+router.onError(() => {
+  useUiStore().isRouteLoading = false
 })
 
 export default router
